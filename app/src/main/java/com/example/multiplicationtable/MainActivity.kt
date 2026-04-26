@@ -429,13 +429,21 @@ suspend fun fetchZuzelNews(): List<NewsItem> = withContext(Dispatchers.IO) {
         .timeout(15_000)
         .get()
 
-    val newsSection = document.selectFirst(NEWS_SECTION_SELECTOR)
-        ?: throw IllegalStateException("Nie znaleziono sekcji data-st-area=\"news-list\".")
+    val primaryLinks = document.select(
+        "[data-st-area=news-list] a.teaser__title[href]"
+    )
 
-    val links = newsSection.select(NEWS_LINK_SELECTOR)
+    val fallbackLinks = if (primaryLinks.isEmpty()) {
+        document.select(
+            "[data-st-area=news-list] a[href], .teaser a.teaser__title[href]"
+        )
+    } else {
+        primaryLinks
+    }
+
     val found = linkedMapOf<String, NewsItem>()
 
-    links.forEach { link ->
+    fallbackLinks.forEach { link ->
         val rawTitle = link.text().ifBlank {
             link.attr("title")
         }
@@ -458,6 +466,12 @@ suspend fun fetchZuzelNews(): List<NewsItem> = withContext(Dispatchers.IO) {
                 url = absoluteUrl
             )
         }
+    }
+
+    if (found.isEmpty()) {
+        throw IllegalStateException(
+            "Nie znaleziono newsów w selektorze: [data-st-area=news-list] a.teaser__title[href]"
+        )
     }
 
     found.values.take(40)
