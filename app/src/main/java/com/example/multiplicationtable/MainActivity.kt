@@ -1,20 +1,11 @@
 package com.example.multiplicationtable
 
-import android.webkit.WebChromeClient
-import android.webkit.WebResourceRequest
-import android.webkit.WebSettings
-import android.webkit.WebView
-import android.webkit.WebViewClient
-import androidx.activity.compose.BackHandler
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.ui.viewinterop.AndroidView
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -196,10 +187,6 @@ fun ZuzelApp() {
         mutableStateOf(AppTab.Matches)
     }
 
-    var openedWebUrl by remember {
-        mutableStateOf<String?>(null)
-    }
-
     var selectedDayOffset by remember {
         mutableIntStateOf(0)
     }
@@ -227,17 +214,7 @@ fun ZuzelApp() {
             )
         }
     }
-    val currentOpenedWebUrl = openedWebUrl
 
-    if (currentOpenedWebUrl != null) {
-        EmbeddedWebViewScreen(
-            url = currentOpenedWebUrl,
-            onClose = {
-                openedWebUrl = null
-            }
-        )
-        return
-    }
     Column(
         modifier = Modifier.fillMaxSize()
     ) {
@@ -265,7 +242,7 @@ fun ZuzelApp() {
                         refreshCounter++
                     },
                     onSourceClick = { url ->
-                        openedWebUrl = url
+                        openUrl(context, url)
                     }
                 )
 
@@ -284,7 +261,7 @@ fun ZuzelApp() {
                         refreshCounter++
                     },
                     onSourceClick = { url ->
-                        openedWebUrl = url
+                        openUrl(context, url)
                     }
                 )
 
@@ -310,7 +287,7 @@ fun ZuzelApp() {
                         refreshCounter++
                     },
                     onSourceClick = { url ->
-                        openedWebUrl = url
+                        openUrl(context, url)
                     }
                 )
 
@@ -323,7 +300,7 @@ fun ZuzelApp() {
                             selectedDayOffset = offset
                         },
                         onGameClick = { game ->
-                            openedWebUrl = game.url
+                            openUrl(context, game.url)
                         }
                     )
 
@@ -332,7 +309,7 @@ fun ZuzelApp() {
                         title = "Newsy",
                         updatedAt = currentState.data.updatedAt,
                         onNewsClick = { newsItem ->
-                            
+                            openUrl(context, newsItem.url)
                         }
                     )
 
@@ -341,7 +318,7 @@ fun ZuzelApp() {
                         title = "Polonia",
                         updatedAt = currentState.data.updatedAt,
                         onNewsClick = { newsItem ->
-                            openedWebUrl = newsItem.url
+                            openUrl(context, newsItem.url)
                         }
                     )
                 }
@@ -582,7 +559,7 @@ fun ScheduleScreen(
 
                 day.competitions.forEach { competition ->
                     item(
-                        key = "competition_${day.date}_${competition.name}_${competition.tableUrl}"
+                        key = "competition_${day.date}_${competition.name}_${competition.games.firstOrNull()?.url.orEmpty()}"
                     ) {
                         CompetitionCard(
                             competition = competition,
@@ -747,6 +724,9 @@ fun GameRow(
     game: ScheduleGame,
     onClick: () -> Unit
 ) {
+    val hasTwoTeams = game.homeTeam.isNotBlank() && game.awayTeam.isNotBlank()
+    val hasScores = game.homeScore.isNotBlank() || game.awayScore.isNotBlank()
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -767,45 +747,66 @@ fun GameRow(
         Column(
             modifier = Modifier.weight(1f)
         ) {
-            Text(
-                text = game.homeTeam.ifBlank { "Gospodarz" },
-                color = Color(0xFF111827),
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            if (hasTwoTeams) {
+                Text(
+                    text = game.homeTeam,
+                    color = Color(0xFF111827),
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
 
-            Spacer(modifier = Modifier.height(5.dp))
+                Spacer(modifier = Modifier.height(5.dp))
 
-            Text(
-                text = game.awayTeam.ifBlank { "Gość" },
-                color = Color(0xFF111827),
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+                Text(
+                    text = game.awayTeam,
+                    color = Color(0xFF111827),
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            } else {
+                Text(
+                    text = game.homeTeam.ifBlank {
+                        game.rawText
+                            .replace(game.time, "")
+                            .cleanText()
+                            .ifBlank { "Szczegóły wydarzenia" }
+                    },
+                    color = Color(0xFF111827),
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    lineHeight = 20.sp,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
 
-        Column(
-            horizontalAlignment = Alignment.End
-        ) {
-            Text(
-                text = game.homeScore.ifBlank { "-" },
-                color = Color(0xFF111827),
-                fontSize = 16.sp,
-                fontWeight = FontWeight.ExtraBold
-            )
+        if (hasScores) {
+            Spacer(modifier = Modifier.width(8.dp))
 
-            Spacer(modifier = Modifier.height(5.dp))
+            Column(
+                horizontalAlignment = Alignment.End
+            ) {
+                Text(
+                    text = game.homeScore.ifBlank { "-" },
+                    color = Color(0xFF111827),
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
 
-            Text(
-                text = game.awayScore.ifBlank { "-" },
-                color = Color(0xFF111827),
-                fontSize = 16.sp,
-                fontWeight = FontWeight.ExtraBold
-            )
+                Spacer(modifier = Modifier.height(5.dp))
+
+                Text(
+                    text = game.awayScore.ifBlank { "-" },
+                    color = Color(0xFF111827),
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+            }
         }
     }
 }
@@ -1092,13 +1093,12 @@ fun downloadDocument(url: String): Document {
 }
 
 fun parseScheduleDays(document: Document): List<ScheduleDay> {
-    val days = mutableListOf<ScheduleDay>()
-
     val dayBoxes = document.select(SCHEDULE_DAY_SELECTOR)
         .filter { box ->
-            box.select(SCHEDULE_TABLE_SELECTOR).isNotEmpty() &&
-                box.selectFirst(".layout-box-title") != null
+            box.select(SCHEDULE_TABLE_SELECTOR).isNotEmpty()
         }
+
+    val days = mutableListOf<ScheduleDay>()
 
     dayBoxes.forEach { box ->
         val date = box
@@ -1109,14 +1109,14 @@ fun parseScheduleDays(document: Document): List<ScheduleDay> {
 
         val competitions = box
             .select(SCHEDULE_TABLE_SELECTOR)
-            .mapNotNull { table ->
-                parseCompetitionGroup(table)
+            .flatMap { table ->
+                parseCompetitionGroups(table)
             }
 
         if (competitions.isNotEmpty()) {
             days.add(
                 ScheduleDay(
-                    date = date,
+                    date = date.ifBlank { "Terminarz" },
                     competitions = competitions
                 )
             )
@@ -1129,8 +1129,8 @@ fun parseScheduleDays(document: Document): List<ScheduleDay> {
 
     val fallbackCompetitions = document
         .select(SCHEDULE_TABLE_SELECTOR)
-        .mapNotNull { table ->
-            parseCompetitionGroup(table)
+        .flatMap { table ->
+            parseCompetitionGroups(table)
         }
 
     return if (fallbackCompetitions.isNotEmpty()) {
@@ -1145,43 +1145,106 @@ fun parseScheduleDays(document: Document): List<ScheduleDay> {
     }
 }
 
-fun parseCompetitionGroup(table: Element): CompetitionGroup? {
-    val name = table
-        .selectFirst(".event-table-subheader__title")
-        ?.text()
-        ?.cleanText()
-        ?: table
-            .selectFirst(".event-table-subheader, .event-table__subheader")
-            ?.text()
-            ?.replace("Tabela", "")
-            ?.cleanText()
-        ?: "Żużel"
+fun parseCompetitionGroups(table: Element): List<CompetitionGroup> {
+    val content = table.selectFirst(".event-table__content") ?: table
+    val groups = mutableListOf<CompetitionGroup>()
 
-    val tableUrl = table
-        .selectFirst(".event-table-subheader__link[href]")
-        ?.absUrl("href")
-        ?.cleanUrl()
-        .orEmpty()
+    var currentName = "Żużel"
+    var currentTableUrl = ""
+    var currentGames = linkedMapOf<String, ScheduleGame>()
 
-    val games = linkedMapOf<String, ScheduleGame>()
+    fun flushCurrentGroup() {
+        if (currentGames.isNotEmpty()) {
+            groups.add(
+                CompetitionGroup(
+                    name = currentName.ifBlank { "Żużel" },
+                    tableUrl = currentTableUrl,
+                    games = currentGames.values.toList()
+                )
+            )
+        }
+
+        currentGames = linkedMapOf()
+    }
+
+    content.children().forEach { child ->
+        val subheader = when {
+            child.hasClass("event-table-subheader") -> child
+            child.selectFirst("> .event-table-subheader") != null -> child.selectFirst("> .event-table-subheader")
+            else -> null
+        }
+
+        if (subheader != null) {
+            flushCurrentGroup()
+
+            currentName = extractCompetitionName(subheader)
+            currentTableUrl = subheader
+                .selectFirst(".event-table-subheader__link[href]")
+                ?.absUrl("href")
+                ?.cleanUrl()
+                .orEmpty()
+
+            return@forEach
+        }
+
+        val gameElements = child.select(SCHEDULE_GAME_SELECTOR)
+
+        gameElements.forEach { gameElement ->
+            val game = parseScheduleGame(gameElement)
+
+            if (game != null && !currentGames.containsKey(game.url)) {
+                currentGames[game.url] = game
+            }
+        }
+    }
+
+    flushCurrentGroup()
+
+    if (groups.isNotEmpty()) {
+        return groups
+    }
+
+    val fallbackGames = linkedMapOf<String, ScheduleGame>()
 
     table.select(SCHEDULE_GAME_SELECTOR).forEach { gameElement ->
         val game = parseScheduleGame(gameElement)
 
-        if (game != null && !games.containsKey(game.url)) {
-            games[game.url] = game
+        if (game != null && !fallbackGames.containsKey(game.url)) {
+            fallbackGames[game.url] = game
         }
     }
 
-    if (games.isEmpty()) {
-        return null
+    return if (fallbackGames.isNotEmpty()) {
+        listOf(
+            CompetitionGroup(
+                name = extractCompetitionName(table),
+                tableUrl = "",
+                games = fallbackGames.values.toList()
+            )
+        )
+    } else {
+        emptyList()
+    }
+}
+
+fun extractCompetitionName(element: Element): String {
+    val directTitle = element
+        .selectFirst(".event-table-subheader__title")
+        ?.text()
+        ?.cleanText()
+
+    if (!directTitle.isNullOrBlank()) {
+        return directTitle
     }
 
-    return CompetitionGroup(
-        name = name,
-        tableUrl = tableUrl,
-        games = games.values.toList()
-    )
+    val clone = element.clone()
+    clone.select(".event-table-subheader__link").remove()
+
+    return clone
+        .text()
+        .replace("Tabela", "")
+        .cleanText()
+        .ifBlank { "Żużel" }
 }
 
 fun parseScheduleGame(gameElement: Element): ScheduleGame? {
@@ -1217,7 +1280,7 @@ fun parseScheduleGame(gameElement: Element): ScheduleGame? {
         .text()
         .cleanText()
 
-    if (teamNames.size < 2 && rawText.isBlank()) {
+    if (teamNames.isEmpty() && rawText.isBlank()) {
         return null
     }
 
@@ -1489,158 +1552,19 @@ fun currentTimeText(): String {
         Locale.getDefault()
     ).format(Date())
 }
-@Composable
-fun EmbeddedWebViewScreen(
-    url: String,
-    onClose: () -> Unit
-) {
-    var webView by remember {
-        mutableStateOf<WebView?>(null)
-    }
 
-    BackHandler {
-        val currentWebView = webView
-
-        if (currentWebView != null && currentWebView.canGoBack()) {
-            currentWebView.goBack()
-        } else {
-            onClose()
-        }
-    }
-
-    DisposableEffect(Unit) {
-        onDispose {
-            webView?.stopLoading()
-            webView?.destroy()
-            webView = null
-        }
-    }
-
-    Column(
-        modifier = Modifier.fillMaxSize()
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Color(0xFF111827))
-                .padding(
-                    start = 10.dp,
-                    end = 10.dp,
-                    top = 12.dp,
-                    bottom = 12.dp
-                ),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Button(
-                onClick = {
-                    val currentWebView = webView
-
-                    if (currentWebView != null && currentWebView.canGoBack()) {
-                        currentWebView.goBack()
-                    } else {
-                        onClose()
-                    }
-                },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFFF97316),
-                    contentColor = Color.White
-                )
-            ) {
-                Text("← Wróć")
-            }
-
-            Spacer(modifier = Modifier.width(10.dp))
-
-            Column(
-                modifier = Modifier.weight(1f)
-            ) {
-                Text(
-                    text = "Podgląd artykułu",
-                    color = Color.White,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-
-                Text(
-                    text = url,
-                    color = Color.White.copy(alpha = 0.72f),
-                    fontSize = 11.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-        }
-
-        AndroidView(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
-            factory = { context ->
-                WebView(context).apply {
-                    webView = this
-
-                    settings.javaScriptEnabled = true
-                    settings.domStorageEnabled = true
-                    settings.loadsImagesAutomatically = true
-                    settings.cacheMode = WebSettings.LOAD_DEFAULT
-                    settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
-                    settings.useWideViewPort = true
-                    settings.loadWithOverviewMode = true
-                    settings.builtInZoomControls = false
-                    settings.displayZoomControls = false
-
-                    webChromeClient = WebChromeClient()
-
-                    webViewClient = object : WebViewClient() {
-                        override fun shouldOverrideUrlLoading(
-                            view: WebView?,
-                            request: WebResourceRequest?
-                        ): Boolean {
-                            val nextUrl = request?.url?.toString()
-
-                            return if (!nextUrl.isNullOrBlank()) {
-                                view?.loadUrl(nextUrl)
-                                true
-                            } else {
-                                false
-                            }
-                        }
-                    }
-
-                    loadUrl(url)
-                }
-            },
-            update = { view ->
-                webView = view
-
-                if (view.url != url) {
-                    view.loadUrl(url)
-                }
-            }
-        )
-    }
-}
 fun openUrl(
     context: Context,
     url: String
 ) {
     try {
-        val customTabsIntent = CustomTabsIntent.Builder()
-            .setShowTitle(true)
-            .build()
-
-        customTabsIntent.launchUrl(
-            context,
-            Uri.parse(url)
-        )
-    } catch (exception: Exception) {
         val intent = Intent(
             Intent.ACTION_VIEW,
             Uri.parse(url)
         )
 
         context.startActivity(intent)
+    } catch (exception: Exception) {
+        // Brak przeglądarki lub niepoprawny adres — celowo bez crasha.
     }
 }
