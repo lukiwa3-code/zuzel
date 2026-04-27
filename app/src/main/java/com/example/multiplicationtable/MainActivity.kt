@@ -196,6 +196,10 @@ fun ZuzelApp() {
         mutableStateOf(AppTab.Matches)
     }
 
+    var openedWebUrl by remember {
+        mutableStateOf<String?>(null)
+    }
+
     var selectedDayOffset by remember {
         mutableIntStateOf(0)
     }
@@ -223,7 +227,17 @@ fun ZuzelApp() {
             )
         }
     }
+    val currentOpenedWebUrl = openedWebUrl
 
+    if (currentOpenedWebUrl != null) {
+        EmbeddedWebViewScreen(
+            url = currentOpenedWebUrl,
+            onClose = {
+                openedWebUrl = null
+            }
+        )
+        return
+    }
     Column(
         modifier = Modifier.fillMaxSize()
     ) {
@@ -251,7 +265,7 @@ fun ZuzelApp() {
                         refreshCounter++
                     },
                     onSourceClick = { url ->
-                        openUrl(context, url)
+                        openedWebUrl = url
                     }
                 )
 
@@ -270,7 +284,7 @@ fun ZuzelApp() {
                         refreshCounter++
                     },
                     onSourceClick = { url ->
-                        openUrl(context, url)
+                        openedWebUrl = url
                     }
                 )
 
@@ -296,7 +310,7 @@ fun ZuzelApp() {
                         refreshCounter++
                     },
                     onSourceClick = { url ->
-                        openUrl(context, url)
+                        openedWebUrl = url
                     }
                 )
 
@@ -309,7 +323,7 @@ fun ZuzelApp() {
                             selectedDayOffset = offset
                         },
                         onGameClick = { game ->
-                            openUrl(context, game.url)
+                            openedWebUrl = game.url
                         }
                     )
 
@@ -318,7 +332,7 @@ fun ZuzelApp() {
                         title = "Newsy",
                         updatedAt = currentState.data.updatedAt,
                         onNewsClick = { newsItem ->
-                            openUrl(context, newsItem.url)
+                            
                         }
                     )
 
@@ -327,7 +341,7 @@ fun ZuzelApp() {
                         title = "Polonia",
                         updatedAt = currentState.data.updatedAt,
                         onNewsClick = { newsItem ->
-                            openUrl(context, newsItem.url)
+                            openedWebUrl = newsItem.url
                         }
                     )
                 }
@@ -1475,7 +1489,139 @@ fun currentTimeText(): String {
         Locale.getDefault()
     ).format(Date())
 }
+@Composable
+fun EmbeddedWebViewScreen(
+    url: String,
+    onClose: () -> Unit
+) {
+    var webView by remember {
+        mutableStateOf<WebView?>(null)
+    }
 
+    BackHandler {
+        val currentWebView = webView
+
+        if (currentWebView != null && currentWebView.canGoBack()) {
+            currentWebView.goBack()
+        } else {
+            onClose()
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            webView?.stopLoading()
+            webView?.destroy()
+            webView = null
+        }
+    }
+
+    Column(
+        modifier = Modifier.fillMaxSize()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFF111827))
+                .padding(
+                    start = 10.dp,
+                    end = 10.dp,
+                    top = 12.dp,
+                    bottom = 12.dp
+                ),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Button(
+                onClick = {
+                    val currentWebView = webView
+
+                    if (currentWebView != null && currentWebView.canGoBack()) {
+                        currentWebView.goBack()
+                    } else {
+                        onClose()
+                    }
+                },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFFF97316),
+                    contentColor = Color.White
+                )
+            ) {
+                Text("← Wróć")
+            }
+
+            Spacer(modifier = Modifier.width(10.dp))
+
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(
+                    text = "Podgląd artykułu",
+                    color = Color.White,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                Text(
+                    text = url,
+                    color = Color.White.copy(alpha = 0.72f),
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+
+        AndroidView(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            factory = { context ->
+                WebView(context).apply {
+                    webView = this
+
+                    settings.javaScriptEnabled = true
+                    settings.domStorageEnabled = true
+                    settings.loadsImagesAutomatically = true
+                    settings.cacheMode = WebSettings.LOAD_DEFAULT
+                    settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+                    settings.useWideViewPort = true
+                    settings.loadWithOverviewMode = true
+                    settings.builtInZoomControls = false
+                    settings.displayZoomControls = false
+
+                    webChromeClient = WebChromeClient()
+
+                    webViewClient = object : WebViewClient() {
+                        override fun shouldOverrideUrlLoading(
+                            view: WebView?,
+                            request: WebResourceRequest?
+                        ): Boolean {
+                            val nextUrl = request?.url?.toString()
+
+                            return if (!nextUrl.isNullOrBlank()) {
+                                view?.loadUrl(nextUrl)
+                                true
+                            } else {
+                                false
+                            }
+                        }
+                    }
+
+                    loadUrl(url)
+                }
+            },
+            update = { view ->
+                webView = view
+
+                if (view.url != url) {
+                    view.loadUrl(url)
+                }
+            }
+        )
+    }
+}
 fun openUrl(
     context: Context,
     url: String
