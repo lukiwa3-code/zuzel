@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -67,10 +66,6 @@ import java.util.Locale
 private const val ZUZEL_URL = "https://sportowefakty.wp.pl/zuzel"
 private const val POLONIA_URL = "https://sportowefakty.wp.pl/zuzel/pronergy-polonia-pila"
 
-private const val MATCHES_SELECTOR =
-    "[data-st-area=\"Wyniki-pasek\"] a.livescore-item[href], " +
-        "[data-source=\"header-livescore\"] a.livescore-item[href]"
-
 private const val GENERAL_NEWS_SELECTOR =
     "[data-st-area=\"news-list\"] a.teaser__title[href]"
 
@@ -78,6 +73,10 @@ private const val POLONIA_NEWS_SELECTOR =
     "[data-st-area=\"category-news-list\"] a.teaser__title[href], " +
         "[data-st-area=\"news-list\"] a.teaser__title[href], " +
         ".teaser a.teaser__title[href]"
+
+private const val SCHEDULE_DAY_SELECTOR = ".layout-box"
+private const val SCHEDULE_TABLE_SELECTOR = ".event-table"
+private const val SCHEDULE_GAME_SELECTOR = "a.game__link[href]"
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -104,15 +103,24 @@ enum class AppTab(
     Polonia("Polonia")
 }
 
-data class MatchTeam(
-    val name: String,
-    val score: String
+data class ScheduleDay(
+    val date: String,
+    val competitions: List<CompetitionGroup>
 )
 
-data class MatchItem(
-    val status: String,
+data class CompetitionGroup(
+    val name: String,
+    val tableUrl: String,
+    val games: List<ScheduleGame>
+)
+
+data class ScheduleGame(
+    val time: String,
+    val homeTeam: String,
+    val awayTeam: String,
+    val homeScore: String,
+    val awayScore: String,
     val url: String,
-    val teams: List<MatchTeam>,
     val rawText: String
 )
 
@@ -126,9 +134,10 @@ data class NewsItem(
 )
 
 data class AppData(
-    val matches: List<MatchItem>,
+    val scheduleDays: List<ScheduleDay>,
     val news: List<NewsItem>,
     val poloniaNews: List<NewsItem>,
+    val scheduleUrl: String,
     val updatedAt: String
 )
 
@@ -201,39 +210,74 @@ fun ZuzelApp() {
             }
         )
 
-        Toolbar(
-            selectedTab = selectedTab,
-            onRefreshClick = {
-                refreshCounter++
-            },
-            onSourceClick = {
-                val url = when (selectedTab) {
-                    AppTab.Polonia -> POLONIA_URL
-                    AppTab.Matches,
-                    AppTab.News -> ZUZEL_URL
-                }
-
-                openUrl(context, url)
-            }
-        )
-
         when (val currentState = state) {
-            UiState.Loading -> LoadingScreen()
+            UiState.Loading -> {
+                Toolbar(
+                    selectedTab = selectedTab,
+                    sourceUrl = when (selectedTab) {
+                        AppTab.Matches -> currentScheduleUrl()
+                        AppTab.News -> ZUZEL_URL
+                        AppTab.Polonia -> POLONIA_URL
+                    },
+                    onRefreshClick = {
+                        refreshCounter++
+                    },
+                    onSourceClick = { url ->
+                        openUrl(context, url)
+                    }
+                )
 
-            is UiState.Error -> ErrorScreen(
-                message = currentState.message,
-                onRetryClick = {
-                    refreshCounter++
-                }
-            )
+                LoadingScreen()
+            }
+
+            is UiState.Error -> {
+                Toolbar(
+                    selectedTab = selectedTab,
+                    sourceUrl = when (selectedTab) {
+                        AppTab.Matches -> currentScheduleUrl()
+                        AppTab.News -> ZUZEL_URL
+                        AppTab.Polonia -> POLONIA_URL
+                    },
+                    onRefreshClick = {
+                        refreshCounter++
+                    },
+                    onSourceClick = { url ->
+                        openUrl(context, url)
+                    }
+                )
+
+                ErrorScreen(
+                    message = currentState.message,
+                    onRetryClick = {
+                        refreshCounter++
+                    }
+                )
+            }
 
             is UiState.Success -> {
+                val sourceUrl = when (selectedTab) {
+                    AppTab.Matches -> currentState.data.scheduleUrl
+                    AppTab.News -> ZUZEL_URL
+                    AppTab.Polonia -> POLONIA_URL
+                }
+
+                Toolbar(
+                    selectedTab = selectedTab,
+                    sourceUrl = sourceUrl,
+                    onRefreshClick = {
+                        refreshCounter++
+                    },
+                    onSourceClick = { url ->
+                        openUrl(context, url)
+                    }
+                )
+
                 when (selectedTab) {
-                    AppTab.Matches -> MatchesScreen(
-                        matches = currentState.data.matches,
+                    AppTab.Matches -> ScheduleScreen(
+                        days = currentState.data.scheduleDays,
                         updatedAt = currentState.data.updatedAt,
-                        onMatchClick = { match ->
-                            openUrl(context, match.url)
+                        onGameClick = { game ->
+                            openUrl(context, game.url)
                         }
                     )
 
@@ -283,7 +327,7 @@ fun Header() {
         Spacer(modifier = Modifier.height(6.dp))
 
         Text(
-            text = "Mecze, newsy i Polonia Piła",
+            text = "Terminarz, newsy i Polonia Piła",
             color = Color.White.copy(alpha = 0.86f),
             fontSize = 15.sp
         )
@@ -300,7 +344,7 @@ fun AppTabs(
         containerColor = Color(0xFF111827),
         contentColor = Color.White
     ) {
-        AppTab.entries.forEach { tab ->
+        AppTab.values().forEach { tab ->
             Tab(
                 selected = selectedTab == tab,
                 onClick = {
@@ -322,13 +366,14 @@ fun AppTabs(
 @Composable
 fun Toolbar(
     selectedTab: AppTab,
+    sourceUrl: String,
     onRefreshClick: () -> Unit,
-    onSourceClick: () -> Unit
+    onSourceClick: (String) -> Unit
 ) {
     val sourceText = when (selectedTab) {
-        AppTab.Polonia -> "Polonia WP"
-        AppTab.Matches,
+        AppTab.Matches -> "Terminarz WP"
         AppTab.News -> "WP"
+        AppTab.Polonia -> "Polonia WP"
     }
 
     Row(
@@ -350,7 +395,9 @@ fun Toolbar(
         }
 
         Button(
-            onClick = onSourceClick,
+            onClick = {
+                onSourceClick(sourceUrl)
+            },
             colors = ButtonDefaults.buttonColors(
                 containerColor = Color(0xFF111827),
                 contentColor = Color.White
@@ -429,14 +476,14 @@ fun ErrorScreen(
 }
 
 @Composable
-fun MatchesScreen(
-    matches: List<MatchItem>,
+fun ScheduleScreen(
+    days: List<ScheduleDay>,
     updatedAt: String,
-    onMatchClick: (MatchItem) -> Unit
+    onGameClick: (ScheduleGame) -> Unit
 ) {
-    if (matches.isEmpty()) {
+    if (days.isEmpty()) {
         EmptyScreen(
-            message = "Nie znaleziono meczów."
+            message = "Nie znaleziono meczów w terminarzu."
         )
         return
     }
@@ -452,37 +499,64 @@ fun MatchesScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
+            val gameCount = days.sumOf { day ->
+                day.competitions.sumOf { competition ->
+                    competition.games.size
+                }
+            }
+
             Text(
-                text = "Mecze: ${matches.size} • Odświeżono: $updatedAt",
+                text = "Mecze: $gameCount • Odświeżono: $updatedAt",
                 color = Color(0xFF6B7280),
                 fontSize = 13.sp,
                 modifier = Modifier.padding(bottom = 2.dp)
             )
         }
 
-        items(
-            items = matches,
-            key = { item -> item.url }
-        ) { item ->
-            MatchCard(
-                item = item,
-                onClick = {
-                    onMatchClick(item)
+        days.forEach { day ->
+            item(
+                key = "date_${day.date}"
+            ) {
+                DateHeader(date = day.date)
+            }
+
+            day.competitions.forEach { competition ->
+                item(
+                    key = "competition_${day.date}_${competition.name}_${competition.tableUrl}"
+                ) {
+                    CompetitionCard(
+                        competition = competition,
+                        onGameClick = onGameClick
+                    )
                 }
-            )
+            }
         }
     }
 }
 
 @Composable
-fun MatchCard(
-    item: MatchItem,
-    onClick: () -> Unit
-) {
-    Card(
+fun DateHeader(date: String) {
+    Text(
+        text = date.ifBlank { "Terminarz" },
+        color = Color(0xFF111827),
+        fontSize = 22.sp,
+        fontWeight = FontWeight.ExtraBold,
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
+            .padding(
+                top = 6.dp,
+                bottom = 2.dp
+            )
+    )
+}
+
+@Composable
+fun CompetitionCard(
+    competition: CompetitionGroup,
+    onGameClick: (ScheduleGame) -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
             containerColor = Color.White
         ),
@@ -491,98 +565,100 @@ fun MatchCard(
         )
     ) {
         Column(
-            modifier = Modifier.padding(15.dp)
+            modifier = Modifier.padding(14.dp)
         ) {
-            StatusBadge(status = item.status)
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            if (item.teams.size >= 2) {
-                item.teams.forEach { team ->
-                    TeamRow(team = team)
-                }
-            } else {
-                Text(
-                    text = item.rawText.ifBlank {
-                        "Kliknij, aby zobaczyć szczegóły meczu."
-                    },
-                    color = Color(0xFF374151),
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                    lineHeight = 20.sp
-                )
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
             Text(
-                text = "Szczegóły meczu",
-                color = Color(0xFFF97316),
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold
+                text = competition.name.ifBlank { "Żużel" },
+                color = Color(0xFF111827),
+                fontSize = 17.sp,
+                fontWeight = FontWeight.ExtraBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
             )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            competition.games.forEachIndexed { index, game ->
+                GameRow(
+                    game = game,
+                    onClick = {
+                        onGameClick(game)
+                    }
+                )
+
+                if (index != competition.games.lastIndex) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+            }
         }
     }
 }
 
 @Composable
-fun StatusBadge(status: String) {
-    val upper = status.uppercase(Locale.getDefault())
-
-    val backgroundColor = when {
-        upper.contains("ZAKOŃCZONY") -> Color(0xFFE5E7EB)
-        upper.contains("DZIŚ") -> Color(0xFFDCFCE7)
-        upper.contains("JUTRO") -> Color(0xFFDBEAFE)
-        else -> Color(0xFFFFEDD5)
-    }
-
-    val textColor = when {
-        upper.contains("ZAKOŃCZONY") -> Color(0xFF374151)
-        upper.contains("DZIŚ") -> Color(0xFF166534)
-        upper.contains("JUTRO") -> Color(0xFF1D4ED8)
-        else -> Color(0xFFC2410C)
-    }
-
-    Text(
-        text = status.ifBlank { "Mecz" },
-        color = textColor,
-        fontSize = 12.sp,
-        fontWeight = FontWeight.ExtraBold,
-        modifier = Modifier
-            .clip(RoundedCornerShape(999.dp))
-            .background(backgroundColor)
-            .padding(
-                horizontal = 10.dp,
-                vertical = 6.dp
-            )
-    )
-}
-
-@Composable
-fun TeamRow(team: MatchTeam) {
+fun GameRow(
+    game: ScheduleGame,
+    onClick: () -> Unit
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 5.dp),
+            .clip(RoundedCornerShape(13.dp))
+            .background(Color(0xFFF9FAFB))
+            .clickable(onClick = onClick)
+            .padding(11.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            text = team.name,
+            text = game.time.ifBlank { "—" },
             color = Color(0xFF111827),
-            fontSize = 16.sp,
+            fontSize = 15.sp,
             fontWeight = FontWeight.Bold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f)
+            modifier = Modifier.width(54.dp)
         )
 
-        Text(
-            text = team.score,
-            color = Color(0xFF111827),
-            fontSize = 18.sp,
-            fontWeight = FontWeight.ExtraBold,
-            modifier = Modifier.padding(start = 10.dp)
-        )
+        Column(
+            modifier = Modifier.weight(1f)
+        ) {
+            Text(
+                text = game.homeTeam.ifBlank { "Gospodarz" },
+                color = Color(0xFF111827),
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            Spacer(modifier = Modifier.height(5.dp))
+
+            Text(
+                text = game.awayTeam.ifBlank { "Gość" },
+                color = Color(0xFF111827),
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        Column(
+            horizontalAlignment = Alignment.End
+        ) {
+            Text(
+                text = game.homeScore.ifBlank { "-" },
+                color = Color(0xFF111827),
+                fontSize = 16.sp,
+                fontWeight = FontWeight.ExtraBold
+            )
+
+            Spacer(modifier = Modifier.height(5.dp))
+
+            Text(
+                text = game.awayScore.ifBlank { "-" },
+                color = Color(0xFF111827),
+                fontSize = 16.sp,
+                fontWeight = FontWeight.ExtraBold
+            )
+        }
     }
 }
 
@@ -777,6 +853,12 @@ fun EmptyScreen(message: String) {
 }
 
 suspend fun fetchAppData(): AppData = coroutineScope {
+    val scheduleUrl = currentScheduleUrl()
+
+    val scheduleDeferred = async(Dispatchers.IO) {
+        downloadDocument(scheduleUrl)
+    }
+
     val homeDeferred = async(Dispatchers.IO) {
         downloadDocument(ZUZEL_URL)
     }
@@ -785,11 +867,12 @@ suspend fun fetchAppData(): AppData = coroutineScope {
         downloadDocument(POLONIA_URL)
     }
 
+    val scheduleDocument = scheduleDeferred.await()
     val homeDocument = homeDeferred.await()
     val poloniaDocument = poloniaDeferred.await()
 
     AppData(
-        matches = parseMatches(homeDocument),
+        scheduleDays = parseScheduleDays(scheduleDocument),
         news = parseNews(
             document = homeDocument,
             baseUrl = ZUZEL_URL,
@@ -800,8 +883,18 @@ suspend fun fetchAppData(): AppData = coroutineScope {
             baseUrl = POLONIA_URL,
             selector = POLONIA_NEWS_SELECTOR
         ),
+        scheduleUrl = scheduleUrl,
         updatedAt = currentTimeText()
     )
+}
+
+fun currentScheduleUrl(): String {
+    val datePath = SimpleDateFormat(
+        "yyyy/MM/dd",
+        Locale.US
+    ).format(Date())
+
+    return "https://sportowefakty.wp.pl/zuzel/terminarz/$datePath"
 }
 
 fun downloadDocument(url: String): Document {
@@ -816,91 +909,179 @@ fun downloadDocument(url: String): Document {
         .get()
 }
 
-fun parseMatches(document: Document): List<MatchItem> {
-    val items = document.select(MATCHES_SELECTOR)
-    val found = linkedMapOf<String, MatchItem>()
+fun parseScheduleDays(document: Document): List<ScheduleDay> {
+    val days = mutableListOf<ScheduleDay>()
 
-    items.forEach { item ->
-        val url = item.absUrl("href").ifBlank {
-            absoluteUrl(ZUZEL_URL, item.attr("href"))
-        }.cleanUrl()
-
-        if (url.isBlank()) {
-            return@forEach
+    val dayBoxes = document.select(SCHEDULE_DAY_SELECTOR)
+        .filter { box ->
+            box.select(SCHEDULE_TABLE_SELECTOR).isNotEmpty() &&
+                box.selectFirst(".layout-box-title") != null
         }
 
-        val headerText = item
-            .selectFirst(".item-header")
-            ?.text()
-            .orEmpty()
-            .cleanText()
-
-        val status = headerText
-            .replace("Żużel", "")
-            .cleanText()
-            .ifBlank { "Mecz" }
-
-        val bodyText = item
-            .selectFirst(".item-body")
+    dayBoxes.forEach { box ->
+        val date = box
+            .selectFirst(".layout-box-title")
             ?.text()
             ?.cleanText()
-            ?: item
-                .text()
-                .replace(headerText, "")
-                .cleanText()
+            .orEmpty()
 
-        if (bodyText.isBlank()) {
-            return@forEach
-        }
+        val competitions = box
+            .select(SCHEDULE_TABLE_SELECTOR)
+            .mapNotNull { table ->
+                parseCompetitionGroup(table)
+            }
 
-        val teams = parseTeamsFromScoreText(bodyText)
-
-        if (!found.containsKey(url)) {
-            found[url] = MatchItem(
-                status = status,
-                url = url,
-                teams = teams,
-                rawText = if (teams.size >= 2) "" else bodyText
+        if (competitions.isNotEmpty()) {
+            days.add(
+                ScheduleDay(
+                    date = date,
+                    competitions = competitions
+                )
             )
         }
     }
 
-    return found.values.take(20)
+    if (days.isNotEmpty()) {
+        return days
+    }
+
+    val fallbackCompetitions = document
+        .select(SCHEDULE_TABLE_SELECTOR)
+        .mapNotNull { table ->
+            parseCompetitionGroup(table)
+        }
+
+    return if (fallbackCompetitions.isNotEmpty()) {
+        listOf(
+            ScheduleDay(
+                date = "Terminarz",
+                competitions = fallbackCompetitions
+            )
+        )
+    } else {
+        emptyList()
+    }
 }
 
-fun parseTeamsFromScoreText(text: String): List<MatchTeam> {
-    val normalized = text
-        .cleanText()
-        .replace(
-            Regex("([\\p{L}])([0-9]{1,3})(?=\\s|[\\p{Lu}0-9])"),
-            "$1 $2"
-        )
-        .replace(
-            Regex("([0-9]{1,3})([\\p{Lu}])"),
-            "$1 $2"
-        )
+fun parseCompetitionGroup(table: Element): CompetitionGroup? {
+    val name = table
+        .selectFirst(".event-table-subheader__title")
+        ?.text()
+        ?.cleanText()
+        ?: table
+            .selectFirst(".event-table-subheader, .event-table__subheader")
+            ?.text()
+            ?.replace("Tabela", "")
+            ?.cleanText()
+        ?: "Żużel"
 
-    val regex = Regex(
-        "([\\p{L}0-9'\".\\- ]{3,}?)\\s+(\\d{1,3})(?=\\s+[\\p{Lu}0-9]|$)"
-    )
+    val tableUrl = table
+        .selectFirst(".event-table-subheader__link[href]")
+        ?.absUrl("href")
+        ?.cleanUrl()
+        .orEmpty()
 
-    return regex
-        .findAll(normalized)
-        .mapNotNull { match ->
-            val name = match.groupValues.getOrNull(1).orEmpty().cleanText()
-            val score = match.groupValues.getOrNull(2).orEmpty().cleanText()
+    val games = linkedMapOf<String, ScheduleGame>()
 
-            if (name.length >= 3 && score.isNotBlank()) {
-                MatchTeam(
-                    name = name,
-                    score = score
-                )
-            } else {
-                null
-            }
+    table.select(SCHEDULE_GAME_SELECTOR).forEach { gameElement ->
+        val game = parseScheduleGame(gameElement)
+
+        if (game != null && !games.containsKey(game.url)) {
+            games[game.url] = game
         }
-        .take(2)
-        .toList()
+    }
+
+    if (games.isEmpty()) {
+        return null
+    }
+
+    return CompetitionGroup(
+        name = name,
+        tableUrl = tableUrl,
+        games = games.values.toList()
+    )
+}
+
+fun parseScheduleGame(gameElement: Element): ScheduleGame? {
+    val url = gameElement
+        .absUrl("href")
+        .ifBlank {
+            absoluteUrl(ZUZEL_URL, gameElement.attr("href"))
+        }
+        .cleanUrl()
+
+    if (url.isBlank()) {
+        return null
+    }
+
+    val time = gameElement
+        .selectFirst(".game__time")
+        ?.text()
+        ?.cleanText()
+        .orEmpty()
+
+    val teamNames = gameElement
+        .select(".game__team")
+        .map { team ->
+            extractTeamName(team)
+        }
+        .filter { teamName ->
+            teamName.isNotBlank()
+        }
+
+    val scores = extractScoresFromGame(gameElement)
+
+    val rawText = gameElement
+        .text()
+        .cleanText()
+
+    if (teamNames.size < 2 && rawText.isBlank()) {
+        return null
+    }
+
+    return ScheduleGame(
+        time = time,
+        homeTeam = teamNames.getOrNull(0).orEmpty(),
+        awayTeam = teamNames.getOrNull(1).orEmpty(),
+        homeScore = scores.getOrNull(0).orEmpty(),
+        awayScore = scores.getOrNull(1).orEmpty(),
+        url = url,
+        rawText = rawText
+    )
+}
+
+fun extractTeamName(teamElement: Element): String {
+    val clone = teamElement.clone()
+
+    clone
+        .select(".game__score, .game__team-score, .game__result, .game__points, [class*=score], [class*=result]")
+        .remove()
+
+    return clone
+        .text()
+        .cleanText()
+}
+
+fun extractScoresFromGame(gameElement: Element): List<String> {
+    val scoreText = gameElement
+        .select(".game__score, .game__team-score, .game__result, .game__points, [class*=score], [class*=result]")
+        .eachText()
+        .joinToString(" ")
+        .cleanText()
+
+    if (scoreText.isBlank()) {
+        return emptyList()
+    }
+
+    return scoreText
+        .split(Regex("\\s+"))
+        .map { token ->
+            token.trim()
+        }
+        .filter { token ->
+            token == "-" || token.matches(Regex("\\d{1,3}"))
+        }
+        .takeLast(2)
 }
 
 fun parseNews(
