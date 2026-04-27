@@ -12,8 +12,8 @@ android {
         applicationId = "com.example.multiplicationtable"
         minSdk = 23
         targetSdk = 35
-        versionCode = 12
-        versionName = "2.2"
+        versionCode = 13
+        versionName = "2.3"
     }
 
     buildFeatures {
