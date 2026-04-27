@@ -9,6 +9,7 @@ import androidx.activity.compose.setContent
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,6 +23,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -60,6 +62,7 @@ import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import java.net.URI
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
@@ -102,6 +105,13 @@ enum class AppTab(
     News("Newsy"),
     Polonia("Polonia")
 }
+
+data class ScheduleDateOption(
+    val offset: Int,
+    val label: String,
+    val dateText: String,
+    val url: String
+)
 
 data class ScheduleDay(
     val date: String,
@@ -178,6 +188,10 @@ fun ZuzelApp() {
         mutableStateOf(AppTab.Matches)
     }
 
+    var selectedDayOffset by remember {
+        mutableIntStateOf(0)
+    }
+
     var refreshCounter by remember {
         mutableIntStateOf(0)
     }
@@ -186,11 +200,15 @@ fun ZuzelApp() {
         mutableStateOf<UiState>(UiState.Loading)
     }
 
-    LaunchedEffect(refreshCounter) {
+    LaunchedEffect(refreshCounter, selectedDayOffset) {
         state = UiState.Loading
 
         state = try {
-            UiState.Success(fetchAppData())
+            UiState.Success(
+                fetchAppData(
+                    selectedDayOffset = selectedDayOffset
+                )
+            )
         } catch (exception: Exception) {
             UiState.Error(
                 message = exception.message ?: "Nie udało się pobrać danych."
@@ -210,12 +228,14 @@ fun ZuzelApp() {
             }
         )
 
+        val fallbackScheduleUrl = scheduleUrlForOffset(selectedDayOffset)
+
         when (val currentState = state) {
             UiState.Loading -> {
                 Toolbar(
                     selectedTab = selectedTab,
                     sourceUrl = when (selectedTab) {
-                        AppTab.Matches -> currentScheduleUrl()
+                        AppTab.Matches -> fallbackScheduleUrl
                         AppTab.News -> ZUZEL_URL
                         AppTab.Polonia -> POLONIA_URL
                     },
@@ -234,7 +254,7 @@ fun ZuzelApp() {
                 Toolbar(
                     selectedTab = selectedTab,
                     sourceUrl = when (selectedTab) {
-                        AppTab.Matches -> currentScheduleUrl()
+                        AppTab.Matches -> fallbackScheduleUrl
                         AppTab.News -> ZUZEL_URL
                         AppTab.Polonia -> POLONIA_URL
                     },
@@ -276,6 +296,10 @@ fun ZuzelApp() {
                     AppTab.Matches -> ScheduleScreen(
                         days = currentState.data.scheduleDays,
                         updatedAt = currentState.data.updatedAt,
+                        selectedDayOffset = selectedDayOffset,
+                        onDaySelected = { offset ->
+                            selectedDayOffset = offset
+                        },
                         onGameClick = { game ->
                             openUrl(context, game.url)
                         }
@@ -479,13 +503,12 @@ fun ErrorScreen(
 fun ScheduleScreen(
     days: List<ScheduleDay>,
     updatedAt: String,
+    selectedDayOffset: Int,
+    onDaySelected: (Int) -> Unit,
     onGameClick: (ScheduleGame) -> Unit
 ) {
-    if (days.isEmpty()) {
-        EmptyScreen(
-            message = "Nie znaleziono meczów w terminarzu."
-        )
-        return
+    val dateOptions = remember {
+        scheduleDateOptions()
     }
 
     LazyColumn(
@@ -498,6 +521,14 @@ fun ScheduleScreen(
         ),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        item {
+            DaySelector(
+                options = dateOptions,
+                selectedOffset = selectedDayOffset,
+                onDaySelected = onDaySelected
+            )
+        }
+
         item {
             val gameCount = days.sumOf { day ->
                 day.competitions.sumOf { competition ->
@@ -513,23 +544,118 @@ fun ScheduleScreen(
             )
         }
 
-        days.forEach { day ->
-            item(
-                key = "date_${day.date}"
-            ) {
-                DateHeader(date = day.date)
+        if (days.isEmpty()) {
+            item {
+                EmptyScheduleCard(
+                    selectedDayOffset = selectedDayOffset
+                )
             }
-
-            day.competitions.forEach { competition ->
+        } else {
+            days.forEach { day ->
                 item(
-                    key = "competition_${day.date}_${competition.name}_${competition.tableUrl}"
+                    key = "date_${day.date}"
                 ) {
-                    CompetitionCard(
-                        competition = competition,
-                        onGameClick = onGameClick
-                    )
+                    DateHeader(date = day.date)
+                }
+
+                day.competitions.forEach { competition ->
+                    item(
+                        key = "competition_${day.date}_${competition.name}_${competition.tableUrl}"
+                    ) {
+                        CompetitionCard(
+                            competition = competition,
+                            onGameClick = onGameClick
+                        )
+                    }
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun DaySelector(
+    options: List<ScheduleDateOption>,
+    selectedOffset: Int,
+    onDaySelected: (Int) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        options.forEach { option ->
+            val selected = option.offset == selectedOffset
+
+            Column(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(
+                        if (selected) Color(0xFFF97316) else Color.White
+                    )
+                    .clickable {
+                        onDaySelected(option.offset)
+                    }
+                    .padding(
+                        horizontal = 14.dp,
+                        vertical = 10.dp
+                    ),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = option.label,
+                    color = if (selected) Color.White else Color(0xFF111827),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+
+                Spacer(modifier = Modifier.height(3.dp))
+
+                Text(
+                    text = option.dateText,
+                    color = if (selected) Color.White.copy(alpha = 0.9f) else Color(0xFF6B7280),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun EmptyScheduleCard(
+    selectedDayOffset: Int
+) {
+    val option = scheduleDateOptionForOffset(selectedDayOffset)
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = Color.White
+        ),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = 3.dp
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = "Brak meczów",
+                color = Color(0xFF111827),
+                fontSize = 22.sp,
+                fontWeight = FontWeight.ExtraBold
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "Nie znaleziono spotkań dla dnia: ${option.dateText}.",
+                color = Color(0xFF6B7280),
+                fontSize = 15.sp
+            )
         }
     }
 }
@@ -852,8 +978,10 @@ fun EmptyScreen(message: String) {
     }
 }
 
-suspend fun fetchAppData(): AppData = coroutineScope {
-    val scheduleUrl = currentScheduleUrl()
+suspend fun fetchAppData(
+    selectedDayOffset: Int
+): AppData = coroutineScope {
+    val scheduleUrl = scheduleUrlForOffset(selectedDayOffset)
 
     val scheduleDeferred = async(Dispatchers.IO) {
         downloadDocument(scheduleUrl)
@@ -888,11 +1016,43 @@ suspend fun fetchAppData(): AppData = coroutineScope {
     )
 }
 
-fun currentScheduleUrl(): String {
+fun scheduleDateOptions(): List<ScheduleDateOption> {
+    return (0..6).map { offset ->
+        scheduleDateOptionForOffset(offset)
+    }
+}
+
+fun scheduleDateOptionForOffset(offset: Int): ScheduleDateOption {
+    val calendar = Calendar.getInstance()
+    calendar.add(Calendar.DAY_OF_YEAR, offset)
+
+    val label = when (offset) {
+        0 -> "Dziś"
+        1 -> "Jutro"
+        else -> "+$offset"
+    }
+
+    val dateText = SimpleDateFormat(
+        "dd.MM",
+        Locale.getDefault()
+    ).format(calendar.time)
+
+    return ScheduleDateOption(
+        offset = offset,
+        label = label,
+        dateText = dateText,
+        url = scheduleUrlForOffset(offset)
+    )
+}
+
+fun scheduleUrlForOffset(offset: Int): String {
+    val calendar = Calendar.getInstance()
+    calendar.add(Calendar.DAY_OF_YEAR, offset)
+
     val datePath = SimpleDateFormat(
         "yyyy/MM/dd",
         Locale.US
-    ).format(Date())
+    ).format(calendar.time)
 
     return "https://sportowefakty.wp.pl/zuzel/terminarz/$datePath"
 }
