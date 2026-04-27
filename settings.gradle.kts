@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "ZuzelNewsApp"
+rootProject.name = "ZuzelApp"
 include(":app")
