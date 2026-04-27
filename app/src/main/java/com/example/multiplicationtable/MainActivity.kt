@@ -1,5 +1,13 @@
 package com.example.multiplicationtable
 
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import androidx.activity.compose.BackHandler
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.viewinterop.AndroidView
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
