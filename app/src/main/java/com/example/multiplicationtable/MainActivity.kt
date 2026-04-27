@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -1149,7 +1150,7 @@ fun parseCompetitionGroups(table: Element): List<CompetitionGroup> {
     val content = table.selectFirst(".event-table__content") ?: table
     val groups = mutableListOf<CompetitionGroup>()
 
-    var currentName = "Żużel"
+    var currentName = ""
     var currentTableUrl = ""
     var currentGames = linkedMapOf<String, ScheduleGame>()
 
@@ -1167,18 +1168,17 @@ fun parseCompetitionGroups(table: Element): List<CompetitionGroup> {
         currentGames = linkedMapOf()
     }
 
-    content.children().forEach { child ->
-        val subheader = when {
-            child.hasClass("event-table-subheader") -> child
-            child.selectFirst("> .event-table-subheader") != null -> child.selectFirst("> .event-table-subheader")
-            else -> null
-        }
+    val orderedElements = content.select(
+        ".event-table-subheader, a.game__link[href]"
+    )
 
-        if (subheader != null) {
+    orderedElements.forEach { element ->
+        if (element.hasClass("event-table-subheader")) {
             flushCurrentGroup()
 
-            currentName = extractCompetitionName(subheader)
-            currentTableUrl = subheader
+            currentName = extractCompetitionName(element)
+
+            currentTableUrl = element
                 .selectFirst(".event-table-subheader__link[href]")
                 ?.absUrl("href")
                 ?.cleanUrl()
@@ -1187,10 +1187,12 @@ fun parseCompetitionGroups(table: Element): List<CompetitionGroup> {
             return@forEach
         }
 
-        val gameElements = child.select(SCHEDULE_GAME_SELECTOR)
+        if (element.hasClass("game__link")) {
+            if (currentName.isBlank()) {
+                currentName = "Żużel"
+            }
 
-        gameElements.forEach { gameElement ->
-            val game = parseScheduleGame(gameElement)
+            val game = parseScheduleGame(element)
 
             if (game != null && !currentGames.containsKey(game.url)) {
                 currentGames[game.url] = game
@@ -1278,7 +1280,14 @@ fun parseScheduleGame(gameElement: Element): ScheduleGame? {
 
     val rawText = gameElement
         .text()
+        .replace(time, "")
         .cleanText()
+
+    val fallbackTitle = when {
+        teamNames.size >= 2 -> ""
+        teamNames.size == 1 -> teamNames.first()
+        else -> rawText
+    }
 
     if (teamNames.isEmpty() && rawText.isBlank()) {
         return null
@@ -1286,7 +1295,7 @@ fun parseScheduleGame(gameElement: Element): ScheduleGame? {
 
     return ScheduleGame(
         time = time,
-        homeTeam = teamNames.getOrNull(0).orEmpty(),
+        homeTeam = teamNames.getOrNull(0).orEmpty().ifBlank { fallbackTitle },
         awayTeam = teamNames.getOrNull(1).orEmpty(),
         homeScore = scores.getOrNull(0).orEmpty(),
         awayScore = scores.getOrNull(1).orEmpty(),
@@ -1558,13 +1567,24 @@ fun openUrl(
     url: String
 ) {
     try {
-        val intent = Intent(
-            Intent.ACTION_VIEW,
+        val customTabsIntent = CustomTabsIntent.Builder()
+            .setShowTitle(true)
+            .build()
+
+        customTabsIntent.launchUrl(
+            context,
             Uri.parse(url)
         )
-
-        context.startActivity(intent)
     } catch (exception: Exception) {
-        // Brak przeglądarki lub niepoprawny adres — celowo bez crasha.
+        try {
+            val intent = Intent(
+                Intent.ACTION_VIEW,
+                Uri.parse(url)
+            )
+
+            context.startActivity(intent)
+        } catch (_: Exception) {
+            // Brak przeglądarki lub niepoprawny adres — bez crasha.
+        }
     }
 }
