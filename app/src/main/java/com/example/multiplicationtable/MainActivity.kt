@@ -70,6 +70,7 @@ import java.util.Locale
 
 private const val ZUZEL_URL = "https://sportowefakty.wp.pl/zuzel"
 private const val POLONIA_URL = "https://sportowefakty.wp.pl/zuzel/pronergy-polonia-pila"
+private const val PO_BANDZIE_NEWS_URL = "https://po-bandzie.com.pl/zuzel/aktualnosci/"
 
 private const val GENERAL_NEWS_SELECTOR =
     "[data-st-area=\"news-list\"] a.teaser__title[href]"
@@ -104,7 +105,8 @@ enum class AppTab(
     val title: String
 ) {
     Matches("Mecze"),
-    News("Newsy"),
+    News("WP"),
+    PoBandzie("Po Bandzie"),
     Polonia("Polonia")
 }
 
@@ -161,6 +163,7 @@ data class NewsItem(
 data class AppData(
     val scheduleDays: List<ScheduleDay>,
     val news: List<NewsItem>,
+    val poBandzieNews: List<NewsItem>,
     val poloniaNews: List<NewsItem>,
     val scheduleUrl: String,
     val updatedAt: String
@@ -249,11 +252,10 @@ fun ZuzelApp() {
             UiState.Loading -> {
                 Toolbar(
                     selectedTab = selectedTab,
-                    sourceUrl = when (selectedTab) {
-                        AppTab.Matches -> fallbackScheduleUrl
-                        AppTab.News -> ZUZEL_URL
-                        AppTab.Polonia -> POLONIA_URL
-                    },
+                    sourceUrl = sourceUrlForTab(
+                        selectedTab = selectedTab,
+                        scheduleUrl = fallbackScheduleUrl
+                    ),
                     onRefreshClick = {
                         refreshCounter++
                     },
@@ -268,11 +270,10 @@ fun ZuzelApp() {
             is UiState.Error -> {
                 Toolbar(
                     selectedTab = selectedTab,
-                    sourceUrl = when (selectedTab) {
-                        AppTab.Matches -> fallbackScheduleUrl
-                        AppTab.News -> ZUZEL_URL
-                        AppTab.Polonia -> POLONIA_URL
-                    },
+                    sourceUrl = sourceUrlForTab(
+                        selectedTab = selectedTab,
+                        scheduleUrl = fallbackScheduleUrl
+                    ),
                     onRefreshClick = {
                         refreshCounter++
                     },
@@ -290,11 +291,10 @@ fun ZuzelApp() {
             }
 
             is UiState.Success -> {
-                val sourceUrl = when (selectedTab) {
-                    AppTab.Matches -> currentState.data.scheduleUrl
-                    AppTab.News -> ZUZEL_URL
-                    AppTab.Polonia -> POLONIA_URL
-                }
+                val sourceUrl = sourceUrlForTab(
+                    selectedTab = selectedTab,
+                    scheduleUrl = currentState.data.scheduleUrl
+                )
 
                 Toolbar(
                     selectedTab = selectedTab,
@@ -322,7 +322,16 @@ fun ZuzelApp() {
 
                     AppTab.News -> NewsScreen(
                         news = currentState.data.news,
-                        title = "Newsy",
+                        title = "WP",
+                        updatedAt = currentState.data.updatedAt,
+                        onNewsClick = { newsItem ->
+                            openUrl(context, newsItem.url)
+                        }
+                    )
+
+                    AppTab.PoBandzie -> NewsScreen(
+                        news = currentState.data.poBandzieNews,
+                        title = "Po Bandzie",
                         updatedAt = currentState.data.updatedAt,
                         onNewsClick = { newsItem ->
                             openUrl(context, newsItem.url)
@@ -340,6 +349,18 @@ fun ZuzelApp() {
                 }
             }
         }
+    }
+}
+
+fun sourceUrlForTab(
+    selectedTab: AppTab,
+    scheduleUrl: String
+): String {
+    return when (selectedTab) {
+        AppTab.Matches -> scheduleUrl
+        AppTab.News -> ZUZEL_URL
+        AppTab.PoBandzie -> PO_BANDZIE_NEWS_URL
+        AppTab.Polonia -> POLONIA_URL
     }
 }
 
@@ -366,7 +387,7 @@ fun Header() {
         Spacer(modifier = Modifier.height(6.dp))
 
         Text(
-            text = "Terminarz, newsy i Polonia Piła",
+            text = "Terminarz, WP, Po Bandzie i Polonia Piła",
             color = Color.White.copy(alpha = 0.86f),
             fontSize = 15.sp
         )
@@ -392,7 +413,10 @@ fun AppTabs(
                 text = {
                     Text(
                         text = tab.title,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 },
                 selectedContentColor = Color.White,
@@ -412,6 +436,7 @@ fun Toolbar(
     val sourceText = when (selectedTab) {
         AppTab.Matches -> "Terminarz WP"
         AppTab.News -> "WP"
+        AppTab.PoBandzie -> "Po Bandzie"
         AppTab.Polonia -> "Polonia WP"
     }
 
@@ -465,7 +490,7 @@ fun LoadingScreen() {
             Spacer(modifier = Modifier.height(16.dp))
 
             Text(
-                text = "Pobieranie danych i szczegółowych wyników...",
+                text = "Pobieranie danych...",
                 color = Color(0xFF4B5563),
                 fontSize = 16.sp
             )
@@ -1144,9 +1169,14 @@ suspend fun fetchAppData(
         downloadDocument(POLONIA_URL)
     }
 
+    val poBandzieDeferred = async(Dispatchers.IO) {
+        fetchPoBandzieNews()
+    }
+
     val scheduleDocument = scheduleDeferred.await()
     val homeDocument = homeDeferred.await()
     val poloniaDocument = poloniaDeferred.await()
+    val poBandzieNews = poBandzieDeferred.await()
 
     val rawScheduleDays = parseScheduleDays(scheduleDocument)
     val scheduleDaysWithDetails = enrichScheduleDaysWithResultDetails(rawScheduleDays)
@@ -1158,6 +1188,7 @@ suspend fun fetchAppData(
             baseUrl = ZUZEL_URL,
             selector = GENERAL_NEWS_SELECTOR
         ),
+        poBandzieNews = poBandzieNews,
         poloniaNews = parseNews(
             document = poloniaDocument,
             baseUrl = POLONIA_URL,
@@ -1166,6 +1197,37 @@ suspend fun fetchAppData(
         scheduleUrl = scheduleUrl,
         updatedAt = currentTimeText()
     )
+}
+
+suspend fun fetchPoBandzieNews(): List<NewsItem> = coroutineScope {
+    val pages = (1..3).map { page ->
+        async(Dispatchers.IO) {
+            runCatching {
+                val url = poBandziePageUrl(page)
+                val document = downloadDocument(url)
+                parsePoBandzieNews(
+                    document = document,
+                    baseUrl = url
+                )
+            }.getOrDefault(emptyList())
+        }
+    }
+
+    pages
+        .awaitAll()
+        .flatten()
+        .distinctBy { newsItem ->
+            newsItem.url
+        }
+        .take(60)
+}
+
+fun poBandziePageUrl(page: Int): String {
+    return if (page <= 1) {
+        PO_BANDZIE_NEWS_URL
+    } else {
+        "https://po-bandzie.com.pl/zuzel/aktualnosci/$page/"
+    }
 }
 
 suspend fun enrichScheduleDaysWithResultDetails(
@@ -1680,6 +1742,7 @@ fun pointTokenToInt(point: String): Int {
         ?.toIntOrNull()
         ?: 0
 }
+
 fun extractTeamName(teamElement: Element): String {
     val clone = teamElement.clone()
 
@@ -1761,6 +1824,114 @@ fun parseNews(
     }
 
     return found.values.take(40)
+}
+
+fun parsePoBandzieNews(
+    document: Document,
+    baseUrl: String
+): List<NewsItem> {
+    val found = linkedMapOf<String, NewsItem>()
+
+    document.select("article.elementor-post").forEach { article ->
+        val linkElement = article.selectFirst(".elementor-post__thumbnail__link[href]")
+            ?: article.selectFirst(".elementor-post__title a[href]")
+            ?: article.selectFirst("a[href]")
+
+        val title = article
+            .selectFirst(".elementor-post__title")
+            ?.text()
+            ?.cleanText()
+            .orEmpty()
+
+        val rawHref = linkElement
+            ?.attr("href")
+            .orEmpty()
+
+        val url = linkElement
+            ?.absUrl("href")
+            ?.ifBlank { absoluteUrl(baseUrl, rawHref) }
+            ?.cleanUrl()
+            .orEmpty()
+
+        if (title.length < 6 || url.isBlank()) {
+            return@forEach
+        }
+
+        val imageUrl = extractPoBandzieImage(
+            article = article,
+            baseUrl = baseUrl
+        )
+
+        val date = article
+            .selectFirst(".elementor-post-date, time")
+            ?.text()
+            ?.cleanText()
+            .orEmpty()
+
+        val category = article
+            .selectFirst(".elementor-post__badge")
+            ?.text()
+            ?.cleanText()
+            .orEmpty()
+            .ifBlank { "Aktualności" }
+
+        val description = article
+            .selectFirst(".elementor-post__excerpt")
+            ?.text()
+            ?.cleanText()
+            .orEmpty()
+
+        if (!found.containsKey(url)) {
+            found[url] = NewsItem(
+                title = title,
+                category = category,
+                date = date,
+                description = description,
+                imageUrl = imageUrl,
+                url = url
+            )
+        }
+    }
+
+    return found.values.toList()
+}
+
+fun extractPoBandzieImage(
+    article: Element,
+    baseUrl: String
+): String {
+    val image = article.selectFirst(".elementor-post__thumbnail img, img")
+        ?: return ""
+
+    val srcset = image
+        .attr("srcset")
+        .ifBlank { image.attr("data-srcset") }
+        .cleanText()
+
+    val srcFromSrcset = srcset
+        .split(",")
+        .lastOrNull()
+        ?.trim()
+        ?.split(" ")
+        ?.firstOrNull()
+        ?.trim()
+        .orEmpty()
+
+    val rawSource = listOf(
+        srcFromSrcset,
+        image.attr("data-src"),
+        image.attr("data-lazy-src"),
+        image.attr("data-original"),
+        image.attr("src")
+    ).firstOrNull { source ->
+        source.isNotBlank()
+    }.orEmpty()
+
+    return if (rawSource.isBlank()) {
+        ""
+    } else {
+        absoluteUrl(baseUrl, rawSource)
+    }
 }
 
 fun isValidZuzelArticleUrl(url: String): Boolean {
