@@ -1492,10 +1492,12 @@ fun parseResultDetails(document: Document): List<GameResultTeam> {
                         parseRiderResult(row)
                     }
 
-                if (currentTeamName.isNotBlank() && riders.isNotEmpty()) {
+                if (riders.isNotEmpty()) {
                     resultTeams.add(
                         GameResultTeam(
-                            teamName = currentTeamName,
+                            teamName = currentTeamName.ifBlank {
+                                extractIndividualEventTitle(document)
+                            },
                             riders = riders
                         )
                     )
@@ -1509,6 +1511,18 @@ fun parseResultDetails(document: Document): List<GameResultTeam> {
     return resultTeams
 }
 
+fun extractIndividualEventTitle(document: Document): String {
+    val titleFromPage = document
+        .selectFirst("h1, .layout-box-title, .result-details-title")
+        ?.text()
+        ?.cleanText()
+        .orEmpty()
+
+    return titleFromPage.ifBlank {
+        "Wyniki indywidualne"
+    }
+}
+
 fun parseRiderResult(row: Element): RiderResult? {
     val cells = row.select("td")
 
@@ -1516,22 +1530,23 @@ fun parseRiderResult(row: Element): RiderResult? {
         return null
     }
 
-    val number = cells
-        .getOrNull(0)
-        ?.text()
-        ?.cleanText()
-        .orEmpty()
-
-    val name = cells
-        .getOrNull(1)
-        ?.selectFirst(".rider")
+    val name = row
+        .selectFirst("a.rider, .rider")
         ?.text()
         ?.cleanText()
         ?: cells
-            .getOrNull(1)
+            .firstOrNull { cell ->
+                cell.text().cleanText().any { character -> character.isLetter() }
+            }
             ?.text()
             ?.cleanText()
             .orEmpty()
+
+    if (name.isBlank()) {
+        return null
+    }
+
+    val number = extractRiderNumber(cells, name)
 
     val riderPoints = row
         .select("td.rider-point")
@@ -1542,12 +1557,14 @@ fun parseRiderResult(row: Element): RiderResult? {
             point.isNotBlank()
         }
 
-    val total = riderPoints.lastOrNull()
-        ?: cells
+    val total = when {
+        riderPoints.isNotEmpty() -> riderPoints.last()
+        else -> cells
             .lastOrNull()
             ?.text()
             ?.cleanText()
             .orEmpty()
+    }
 
     val pointsByHeat = if (riderPoints.size > 1) {
         riderPoints.dropLast(1)
@@ -1555,18 +1572,30 @@ fun parseRiderResult(row: Element): RiderResult? {
         emptyList()
     }
 
-    if (name.isBlank()) {
-        return null
-    }
-
     return RiderResult(
         number = number,
         name = name,
         pointsByHeat = pointsByHeat,
-        total = total
+        total = total.ifBlank { "0" }
     )
 }
 
+fun extractRiderNumber(
+    cells: List<Element>,
+    riderName: String
+): String {
+    return cells
+        .take(3)
+        .map { cell ->
+            cell.text()
+                .replace(riderName, "")
+                .cleanText()
+        }
+        .firstOrNull { value ->
+            value.matches(Regex("\\d{1,3}"))
+        }
+        .orEmpty()
+}
 fun extractTeamName(teamElement: Element): String {
     val clone = teamElement.clone()
 
