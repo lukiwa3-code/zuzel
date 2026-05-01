@@ -1467,30 +1467,46 @@ fun parseScheduleGame(gameElement: Element): ScheduleGame? {
 }
 
 fun parseResultDetails(document: Document): List<GameResultTeam> {
-    return document
-        .select(".result-details")
-        .mapNotNull { resultContainer ->
-            val teamName = resultContainer
-                .selectFirst(".result-details__header")
-                ?.text()
-                ?.cleanText()
-                .orEmpty()
+    val resultTeams = mutableListOf<GameResultTeam>()
 
-            val riders = resultContainer
-                .select(".result-details__table tbody tr")
-                .mapNotNull { row ->
-                    parseRiderResult(row)
+    document.select(".result-details").forEach { resultContainer ->
+        var currentTeamName = ""
+
+        val orderedElements = resultContainer.select(
+            ".result-details__header, .result-details__table"
+        )
+
+        orderedElements.forEach { element ->
+            if (element.hasClass("result-details__header")) {
+                currentTeamName = element
+                    .text()
+                    .cleanText()
+
+                return@forEach
+            }
+
+            if (element.hasClass("result-details__table")) {
+                val riders = element
+                    .select("tbody tr")
+                    .mapNotNull { row ->
+                        parseRiderResult(row)
+                    }
+
+                if (currentTeamName.isNotBlank() && riders.isNotEmpty()) {
+                    resultTeams.add(
+                        GameResultTeam(
+                            teamName = currentTeamName,
+                            riders = riders
+                        )
+                    )
                 }
 
-            if (teamName.isBlank() || riders.isEmpty()) {
-                null
-            } else {
-                GameResultTeam(
-                    teamName = teamName,
-                    riders = riders
-                )
+                currentTeamName = ""
             }
         }
+    }
+
+    return resultTeams
 }
 
 fun parseRiderResult(row: Element): RiderResult? {
@@ -1527,7 +1543,11 @@ fun parseRiderResult(row: Element): RiderResult? {
         }
 
     val total = riderPoints.lastOrNull()
-        ?: cells.lastOrNull()?.text()?.cleanText().orEmpty()
+        ?: cells
+            .lastOrNull()
+            ?.text()
+            ?.cleanText()
+            .orEmpty()
 
     val pointsByHeat = if (riderPoints.size > 1) {
         riderPoints.dropLast(1)
