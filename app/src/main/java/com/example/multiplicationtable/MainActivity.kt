@@ -1486,10 +1486,15 @@ fun parseResultDetails(document: Document): List<GameResultTeam> {
             }
 
             if (element.hasClass("result-details__table")) {
+                val headers = extractResultTableHeaders(element)
+
                 val riders = element
                     .select("tbody tr")
                     .mapNotNull { row ->
-                        parseRiderResult(row)
+                        parseRiderResult(
+                            row = row,
+                            headers = headers
+                        )
                     }
 
                 if (riders.isNotEmpty()) {
@@ -1511,6 +1516,14 @@ fun parseResultDetails(document: Document): List<GameResultTeam> {
     return resultTeams
 }
 
+fun extractResultTableHeaders(table: Element): List<String> {
+    return table
+        .select("thead th, thead td")
+        .map { header ->
+            header.text().cleanText()
+        }
+}
+
 fun extractIndividualEventTitle(document: Document): String {
     val titleFromPage = document
         .selectFirst("h1, .layout-box-title, .result-details-title")
@@ -1523,69 +1536,112 @@ fun extractIndividualEventTitle(document: Document): String {
     }
 }
 
-fun parseRiderResult(row: Element): RiderResult? {
+fun parseRiderResult(
+    row: Element,
+    headers: List<String>
+): RiderResult? {
     val cells = row.select("td")
 
     if (cells.size < 2) {
         return null
     }
 
-    val name = row
+    val riderColumnIndexFromHeader = headers.indexOfFirst { header ->
+        header.equals("Zawodnik", ignoreCase = true) ||
+            header.contains("Zawodnik", ignoreCase = true)
+    }
+
+    val riderColumnIndex = when {
+        riderColumnIndexFromHeader in cells.indices -> riderColumnIndexFromHeader
+
+        else -> cells.indexOfFirst { cell ->
+            cell.selectFirst("a.rider, .rider") != null ||
+                cell.text().cleanText().any { character -> character.isLetter() }
+        }
+    }
+
+    if (riderColumnIndex !in cells.indices) {
+        return null
+    }
+
+    val name = cells[riderColumnIndex]
         .selectFirst("a.rider, .rider")
         ?.text()
         ?.cleanText()
-        ?: cells
-            .firstOrNull { cell ->
-                cell.text().cleanText().any { character -> character.isLetter() }
-            }
-            ?.text()
-            ?.cleanText()
-            .orEmpty()
+        ?: cells[riderColumnIndex]
+            .text()
+            .cleanText()
 
     if (name.isBlank()) {
         return null
     }
 
-    val number = extractRiderNumber(cells, name)
+    val sumColumnIndexFromHeader = headers.indexOfFirst { header ->
+        header.equals("Suma", ignoreCase = true) ||
+            header.contains("Suma", ignoreCase = true)
+    }
 
-    val riderPoints = row
-        .select("td.rider-point")
-        .map { pointCell ->
-            pointCell.text().cleanText()
+    val sumColumnIndex = if (sumColumnIndexFromHeader in cells.indices) {
+        sumColumnIndexFromHeader
+    } else {
+        -1
+    }
+
+    val pointsStartIndex = riderColumnIndex + 1
+    val pointsEndIndex = if (sumColumnIndex > pointsStartIndex) {
+        sumColumnIndex
+    } else {
+        cells.size
+    }
+
+    val pointsByHeat = cells
+        .subList(
+            pointsStartIndex.coerceAtMost(cells.size),
+            pointsEndIndex.coerceAtMost(cells.size)
+        )
+        .map { cell ->
+            cleanRiderPointToken(cell.text())
         }
         .filter { point ->
             point.isNotBlank()
         }
 
-    val total = when {
-        riderPoints.isNotEmpty() -> riderPoints.last()
-        else -> cells
-            .lastOrNull()
-            ?.text()
-            ?.cleanText()
-            .orEmpty()
+    val totalFromSumColumn = if (sumColumnIndex in cells.indices) {
+        cells[sumColumnIndex]
+            .text()
+            .cleanText()
+    } else {
+        ""
     }
 
-    val pointsByHeat = if (riderPoints.size > 1) {
-        riderPoints.dropLast(1)
-    } else {
-        emptyList()
+    val calculatedTotal = calculateRiderTotalPointsText(pointsByHeat)
+
+    val total = when {
+        totalFromSumColumn.isNotBlank() &&
+            !(totalFromSumColumn == "0" && calculatedTotal != "0") -> totalFromSumColumn
+
+        else -> calculatedTotal
     }
 
     return RiderResult(
-        number = number,
+        number = extractRiderNumber(
+            cells = cells,
+            riderName = name,
+            riderColumnIndex = riderColumnIndex
+        ),
         name = name,
         pointsByHeat = pointsByHeat,
-        total = total.ifBlank { "0" }
+        total = total
     )
 }
 
 fun extractRiderNumber(
     cells: List<Element>,
-    riderName: String
+    riderName: String,
+    riderColumnIndex: Int
 ): String {
     return cells
-        .take(3)
+        .take(riderColumnIndex)
         .map { cell ->
             cell.text()
                 .replace(riderName, "")
@@ -1595,6 +1651,34 @@ fun extractRiderNumber(
             value.matches(Regex("\\d{1,3}"))
         }
         .orEmpty()
+}
+
+fun cleanRiderPointToken(value: String): String {
+    return value
+        .replace("\u00A0", " ")
+        .cleanText()
+}
+
+fun calculateRiderTotalPointsText(pointsByHeat: List<String>): String {
+    val total = pointsByHeat.sumOf { point ->
+        pointTokenToInt(point)
+    }
+
+    return total.toString()
+}
+
+fun pointTokenToInt(point: String): Int {
+    val normalized = point
+        .lowercase(Locale.getDefault())
+        .replace("*", "")
+        .replace("+", "")
+        .trim()
+
+    return Regex("\\d+")
+        .find(normalized)
+        ?.value
+        ?.toIntOrNull()
+        ?: 0
 }
 fun extractTeamName(teamElement: Element): String {
     val clone = teamElement.clone()
