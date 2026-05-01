@@ -22,7 +22,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
@@ -56,7 +55,10 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
@@ -131,7 +133,20 @@ data class ScheduleGame(
     val homeScore: String,
     val awayScore: String,
     val url: String,
-    val rawText: String
+    val rawText: String,
+    val resultDetails: List<GameResultTeam>
+)
+
+data class GameResultTeam(
+    val teamName: String,
+    val riders: List<RiderResult>
+)
+
+data class RiderResult(
+    val number: String,
+    val name: String,
+    val pointsByHeat: List<String>,
+    val total: String
 )
 
 data class NewsItem(
@@ -450,7 +465,7 @@ fun LoadingScreen() {
             Spacer(modifier = Modifier.height(16.dp))
 
             Text(
-                text = "Pobieranie danych...",
+                text = "Pobieranie danych i szczegółowych wyników...",
                 color = Color(0xFF4B5563),
                 fontSize = 16.sp
             )
@@ -713,7 +728,7 @@ fun CompetitionCard(
                 )
 
                 if (index != competition.games.lastIndex) {
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
                 }
             }
         }
@@ -728,87 +743,195 @@ fun GameRow(
     val hasTwoTeams = game.homeTeam.isNotBlank() && game.awayTeam.isNotBlank()
     val hasScores = game.homeScore.isNotBlank() || game.awayScore.isNotBlank()
 
-    Row(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(13.dp))
             .background(Color(0xFFF9FAFB))
             .clickable(onClick = onClick)
-            .padding(11.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(11.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = game.time.ifBlank { "—" },
+                color = Color(0xFF111827),
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.width(54.dp)
+            )
+
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
+                if (hasTwoTeams) {
+                    Text(
+                        text = game.homeTeam,
+                        color = Color(0xFF111827),
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+
+                    Spacer(modifier = Modifier.height(5.dp))
+
+                    Text(
+                        text = game.awayTeam,
+                        color = Color(0xFF111827),
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                } else {
+                    Text(
+                        text = game.homeTeam.ifBlank {
+                            game.rawText
+                                .replace(game.time, "")
+                                .cleanText()
+                                .ifBlank { "Szczegóły wydarzenia" }
+                        },
+                        color = Color(0xFF111827),
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        lineHeight = 20.sp,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            if (hasScores) {
+                Spacer(modifier = Modifier.width(8.dp))
+
+                Column(
+                    horizontalAlignment = Alignment.End
+                ) {
+                    Text(
+                        text = game.homeScore.ifBlank { "-" },
+                        color = Color(0xFF111827),
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+
+                    Spacer(modifier = Modifier.height(5.dp))
+
+                    Text(
+                        text = game.awayScore.ifBlank { "-" },
+                        color = Color(0xFF111827),
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                }
+            }
+        }
+
+        if (game.resultDetails.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(12.dp))
+
+            ResultDetailsView(
+                resultDetails = game.resultDetails
+            )
+        }
+    }
+}
+
+@Composable
+fun ResultDetailsView(
+    resultDetails: List<GameResultTeam>
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(11.dp))
+            .background(Color.White)
+            .padding(10.dp)
     ) {
         Text(
-            text = game.time.ifBlank { "—" },
+            text = "Szczegółowe wyniki",
             color = Color(0xFF111827),
-            fontSize = 15.sp,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.ExtraBold
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        resultDetails.forEachIndexed { teamIndex, team ->
+            Text(
+                text = team.teamName,
+                color = Color(0xFF166534),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.ExtraBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            Spacer(modifier = Modifier.height(5.dp))
+
+            team.riders.forEach { rider ->
+                RiderResultRow(
+                    rider = rider
+                )
+            }
+
+            if (teamIndex != resultDetails.lastIndex) {
+                Spacer(modifier = Modifier.height(10.dp))
+            }
+        }
+    }
+}
+
+@Composable
+fun RiderResultRow(
+    rider: RiderResult
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 3.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        Text(
+            text = rider.number.ifBlank { "•" },
+            color = Color(0xFF6B7280),
+            fontSize = 12.sp,
             fontWeight = FontWeight.Bold,
-            modifier = Modifier.width(54.dp)
+            modifier = Modifier.width(24.dp)
         )
 
         Column(
             modifier = Modifier.weight(1f)
         ) {
-            if (hasTwoTeams) {
-                Text(
-                    text = game.homeTeam,
-                    color = Color(0xFF111827),
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+            Text(
+                text = rider.name.ifBlank { "Zawodnik" },
+                color = Color(0xFF111827),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
 
-                Spacer(modifier = Modifier.height(5.dp))
-
+            if (rider.pointsByHeat.isNotEmpty()) {
                 Text(
-                    text = game.awayTeam,
-                    color = Color(0xFF111827),
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
+                    text = rider.pointsByHeat.joinToString(" · "),
+                    color = Color(0xFF6B7280),
+                    fontSize = 11.sp,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            } else {
-                Text(
-                    text = game.homeTeam.ifBlank {
-                        game.rawText
-                            .replace(game.time, "")
-                            .cleanText()
-                            .ifBlank { "Szczegóły wydarzenia" }
-                    },
-                    color = Color(0xFF111827),
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                    lineHeight = 20.sp,
-                    maxLines = 3,
                     overflow = TextOverflow.Ellipsis
                 )
             }
         }
 
-        if (hasScores) {
-            Spacer(modifier = Modifier.width(8.dp))
-
-            Column(
-                horizontalAlignment = Alignment.End
-            ) {
-                Text(
-                    text = game.homeScore.ifBlank { "-" },
-                    color = Color(0xFF111827),
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.ExtraBold
-                )
-
-                Spacer(modifier = Modifier.height(5.dp))
-
-                Text(
-                    text = game.awayScore.ifBlank { "-" },
-                    color = Color(0xFF111827),
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.ExtraBold
-                )
-            }
-        }
+        Text(
+            text = rider.total.ifBlank { "0" },
+            color = Color(0xFF16A34A),
+            fontSize = 14.sp,
+            fontWeight = FontWeight.ExtraBold,
+            modifier = Modifier.padding(start = 8.dp)
+        )
     }
 }
 
@@ -846,9 +969,11 @@ fun NewsScreen(
         }
 
         items(
-            items = news,
-            key = { item -> item.url }
-        ) { item ->
+            count = news.size,
+            key = { index -> news[index].url }
+        ) { index ->
+            val item = news[index]
+
             NewsCard(
                 item = item,
                 tag = title.uppercase(Locale.getDefault()),
@@ -1023,8 +1148,11 @@ suspend fun fetchAppData(
     val homeDocument = homeDeferred.await()
     val poloniaDocument = poloniaDeferred.await()
 
+    val rawScheduleDays = parseScheduleDays(scheduleDocument)
+    val scheduleDaysWithDetails = enrichScheduleDaysWithResultDetails(rawScheduleDays)
+
     AppData(
-        scheduleDays = parseScheduleDays(scheduleDocument),
+        scheduleDays = scheduleDaysWithDetails,
         news = parseNews(
             document = homeDocument,
             baseUrl = ZUZEL_URL,
@@ -1038,6 +1166,39 @@ suspend fun fetchAppData(
         scheduleUrl = scheduleUrl,
         updatedAt = currentTimeText()
     )
+}
+
+suspend fun enrichScheduleDaysWithResultDetails(
+    days: List<ScheduleDay>
+): List<ScheduleDay> = coroutineScope {
+    val semaphore = Semaphore(permits = 4)
+
+    days.map { day ->
+        val competitions = day.competitions.map { competition ->
+            val gameDeferreds = competition.games.map { game ->
+                async(Dispatchers.IO) {
+                    val details = semaphore.withPermit {
+                        runCatching {
+                            val detailDocument = downloadDocument(game.url)
+                            parseResultDetails(detailDocument)
+                        }.getOrDefault(emptyList())
+                    }
+
+                    game.copy(
+                        resultDetails = details
+                    )
+                }
+            }
+
+            competition.copy(
+                games = gameDeferreds.awaitAll()
+            )
+        }
+
+        day.copy(
+            competitions = competitions
+        )
+    }
 }
 
 fun scheduleDateOptions(): List<ScheduleDateOption> {
@@ -1300,7 +1461,89 @@ fun parseScheduleGame(gameElement: Element): ScheduleGame? {
         homeScore = scores.getOrNull(0).orEmpty(),
         awayScore = scores.getOrNull(1).orEmpty(),
         url = url,
-        rawText = rawText
+        rawText = rawText,
+        resultDetails = emptyList()
+    )
+}
+
+fun parseResultDetails(document: Document): List<GameResultTeam> {
+    return document
+        .select(".result-details")
+        .mapNotNull { resultContainer ->
+            val teamName = resultContainer
+                .selectFirst(".result-details__header")
+                ?.text()
+                ?.cleanText()
+                .orEmpty()
+
+            val riders = resultContainer
+                .select(".result-details__table tbody tr")
+                .mapNotNull { row ->
+                    parseRiderResult(row)
+                }
+
+            if (teamName.isBlank() || riders.isEmpty()) {
+                null
+            } else {
+                GameResultTeam(
+                    teamName = teamName,
+                    riders = riders
+                )
+            }
+        }
+}
+
+fun parseRiderResult(row: Element): RiderResult? {
+    val cells = row.select("td")
+
+    if (cells.size < 2) {
+        return null
+    }
+
+    val number = cells
+        .getOrNull(0)
+        ?.text()
+        ?.cleanText()
+        .orEmpty()
+
+    val name = cells
+        .getOrNull(1)
+        ?.selectFirst(".rider")
+        ?.text()
+        ?.cleanText()
+        ?: cells
+            .getOrNull(1)
+            ?.text()
+            ?.cleanText()
+            .orEmpty()
+
+    val riderPoints = row
+        .select("td.rider-point")
+        .map { pointCell ->
+            pointCell.text().cleanText()
+        }
+        .filter { point ->
+            point.isNotBlank()
+        }
+
+    val total = riderPoints.lastOrNull()
+        ?: cells.lastOrNull()?.text()?.cleanText().orEmpty()
+
+    val pointsByHeat = if (riderPoints.size > 1) {
+        riderPoints.dropLast(1)
+    } else {
+        emptyList()
+    }
+
+    if (name.isBlank()) {
+        return null
+    }
+
+    return RiderResult(
+        number = number,
+        name = name,
+        pointsByHeat = pointsByHeat,
+        total = total
     )
 }
 
