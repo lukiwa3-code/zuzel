@@ -765,19 +765,25 @@ fun GameRow(
     game: ScheduleGame,
     onClick: () -> Unit
 ) {
+    var expanded by remember(game.url) {
+        mutableStateOf(false)
+    }
+
     val hasTwoTeams = game.homeTeam.isNotBlank() && game.awayTeam.isNotBlank()
     val hasScores = game.homeScore.isNotBlank() || game.awayScore.isNotBlank()
+    val hasResultDetails = game.resultDetails.isNotEmpty()
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(13.dp))
             .background(Color(0xFFF9FAFB))
-            .clickable(onClick = onClick)
             .padding(11.dp)
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onClick),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
@@ -852,9 +858,51 @@ fun GameRow(
                     )
                 }
             }
+
+            if (hasResultDetails) {
+                Spacer(modifier = Modifier.width(10.dp))
+
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(
+                            if (expanded) Color(0xFF111827) else Color(0xFFF97316)
+                        )
+                        .clickable {
+                            expanded = !expanded
+                        }
+                        .padding(
+                            horizontal = 11.dp,
+                            vertical = 6.dp
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = if (expanded) "−" else "+",
+                        color = Color.White,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                }
+            }
         }
 
-        if (game.resultDetails.isNotEmpty()) {
+        if (hasResultDetails) {
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = if (expanded) {
+                    "Dotknij −, aby ukryć składy"
+                } else {
+                    "Dotknij +, aby rozwinąć składy"
+                },
+                color = Color(0xFF6B7280),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+
+        if (expanded && hasResultDetails) {
             Spacer(modifier = Modifier.height(12.dp))
 
             ResultDetailsView(
