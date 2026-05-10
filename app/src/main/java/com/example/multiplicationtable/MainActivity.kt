@@ -958,11 +958,13 @@ fun ResultDetailsView(
 fun RiderResultRow(
     rider: RiderResult
 ) {
+    val pointsText = rider.pointsByHeat.joinToString(" · ")
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 1.dp),
-        verticalAlignment = Alignment.Top
+        verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
             text = rider.number.ifBlank { "•" },
@@ -972,27 +974,27 @@ fun RiderResultRow(
             modifier = Modifier.width(22.dp)
         )
 
-        Column(
-            modifier = Modifier.weight(1f)
-        ) {
-            Text(
-                text = rider.name.ifBlank { "Zawodnik" },
-                color = Color(0xFF111827),
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+        Text(
+            text = rider.name.ifBlank { "Zawodnik" },
+            color = Color(0xFF111827),
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1.15f)
+        )
 
-            if (rider.pointsByHeat.isNotEmpty()) {
-                Text(
-                    text = rider.pointsByHeat.joinToString(" · "),
-                    color = Color(0xFF6B7280),
-                    fontSize = 10.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
+        if (pointsText.isNotBlank()) {
+            Text(
+                text = pointsText,
+                color = Color(0xFF6B7280),
+                fontSize = 10.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 5.dp)
+            )
         }
 
         Text(
