@@ -961,23 +961,21 @@ fun RiderResultRow(
     val pointsText = rider.pointsByHeat.joinToString(" · ")
 
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 1.dp),
+        modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
             text = rider.number.ifBlank { "•" },
             color = Color(0xFF6B7280),
-            fontSize = 11.sp,
+            fontSize = 10.sp,
             fontWeight = FontWeight.Bold,
-            modifier = Modifier.width(22.dp)
+            modifier = Modifier.width(20.dp)
         )
 
         Text(
             text = rider.name.ifBlank { "Zawodnik" },
             color = Color(0xFF111827),
-            fontSize = 12.sp,
+            fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -988,21 +986,21 @@ fun RiderResultRow(
             Text(
                 text = pointsText,
                 color = Color(0xFF6B7280),
-                fontSize = 10.sp,
+                fontSize = 9.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier
                     .weight(1f)
-                    .padding(start = 5.dp)
+                    .padding(start = 4.dp)
             )
         }
 
         Text(
             text = rider.total.ifBlank { "0" },
             color = Color(0xFF16A34A),
-            fontSize = 13.sp,
+            fontSize = 12.sp,
             fontWeight = FontWeight.ExtraBold,
-            modifier = Modifier.padding(start = 6.dp)
+            modifier = Modifier.padding(start = 5.dp)
         )
     }
 }
