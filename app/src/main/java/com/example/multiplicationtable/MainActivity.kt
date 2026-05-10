@@ -879,6 +879,8 @@ fun GameRow(
         }
     }
 }
+
+@Composable
 fun CompactTeamLine(
     teamName: String,
     score: String
@@ -906,7 +908,7 @@ fun CompactTeamLine(
         )
     }
 }
-@Composable
+
 @Composable
 fun ResultDetailsView(
     resultDetails: List<GameResultTeam>
