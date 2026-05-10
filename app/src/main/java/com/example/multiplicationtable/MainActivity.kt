@@ -727,22 +727,27 @@ fun CompetitionCard(
             containerColor = Color.White
         ),
         elevation = CardDefaults.cardElevation(
-            defaultElevation = 3.dp
+            defaultElevation = 2.dp
         )
     ) {
         Column(
-            modifier = Modifier.padding(14.dp)
+            modifier = Modifier.padding(
+                start = 9.dp,
+                end = 9.dp,
+                top = 9.dp,
+                bottom = 9.dp
+            )
         ) {
             Text(
                 text = competition.name.ifBlank { "Żużel" },
                 color = Color(0xFF111827),
-                fontSize = 17.sp,
+                fontSize = 15.sp,
                 fontWeight = FontWeight.ExtraBold,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(7.dp))
 
             competition.games.forEachIndexed { index, game ->
                 GameRow(
@@ -753,7 +758,7 @@ fun CompetitionCard(
                 )
 
                 if (index != competition.games.lastIndex) {
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
                 }
             }
         }
@@ -776,9 +781,14 @@ fun GameRow(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(13.dp))
+            .clip(RoundedCornerShape(10.dp))
             .background(Color(0xFFF9FAFB))
-            .padding(11.dp)
+            .padding(
+                start = 8.dp,
+                end = 8.dp,
+                top = 7.dp,
+                bottom = 7.dp
+            )
     ) {
         Row(
             modifier = Modifier
@@ -789,33 +799,25 @@ fun GameRow(
             Text(
                 text = game.time.ifBlank { "—" },
                 color = Color(0xFF111827),
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.width(54.dp)
+                fontSize = 13.sp,
+                fontWeight = FontWeight.ExtraBold,
+                modifier = Modifier.width(44.dp)
             )
 
             Column(
                 modifier = Modifier.weight(1f)
             ) {
                 if (hasTwoTeams) {
-                    Text(
-                        text = game.homeTeam,
-                        color = Color(0xFF111827),
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                    CompactTeamLine(
+                        teamName = game.homeTeam,
+                        score = game.homeScore
                     )
 
-                    Spacer(modifier = Modifier.height(5.dp))
+                    Spacer(modifier = Modifier.height(2.dp))
 
-                    Text(
-                        text = game.awayTeam,
-                        color = Color(0xFF111827),
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                    CompactTeamLine(
+                        teamName = game.awayTeam,
+                        score = game.awayScore
                     )
                 } else {
                     Text(
@@ -826,84 +828,50 @@ fun GameRow(
                                 .ifBlank { "Szczegóły wydarzenia" }
                         },
                         color = Color(0xFF111827),
-                        fontSize = 15.sp,
+                        fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
-                        lineHeight = 20.sp,
-                        maxLines = 3,
+                        lineHeight = 17.sp,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-
-            if (hasScores) {
-                Spacer(modifier = Modifier.width(8.dp))
-
-                Column(
-                    horizontalAlignment = Alignment.End
-                ) {
-                    Text(
-                        text = game.homeScore.ifBlank { "-" },
-                        color = Color(0xFF111827),
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.ExtraBold
-                    )
-
-                    Spacer(modifier = Modifier.height(5.dp))
-
-                    Text(
-                        text = game.awayScore.ifBlank { "-" },
-                        color = Color(0xFF111827),
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.ExtraBold
-                    )
-                }
-            }
-
-            if (hasResultDetails) {
-                Spacer(modifier = Modifier.width(10.dp))
-
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(999.dp))
-                        .background(
-                            if (expanded) Color(0xFF111827) else Color(0xFFF97316)
-                        )
-                        .clickable {
-                            expanded = !expanded
-                        }
-                        .padding(
-                            horizontal = 11.dp,
-                            vertical = 6.dp
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = if (expanded) "−" else "+",
-                        color = Color.White,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.ExtraBold
                     )
                 }
             }
         }
 
         if (hasResultDetails) {
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(5.dp))
 
-            Text(
-                text = if (expanded) {
-                    "Dotknij −, aby ukryć składy"
-                } else {
-                    "Dotknij +, aby rozwinąć składy"
-                },
-                color = Color(0xFF6B7280),
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold
-            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(
+                        if (expanded) Color(0xFF111827) else Color(0xFFFFEDD5)
+                    )
+                    .clickable {
+                        expanded = !expanded
+                    }
+                    .padding(
+                        horizontal = 8.dp,
+                        vertical = 5.dp
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = if (expanded) {
+                        "− Ukryj składy"
+                    } else {
+                        "+ Rozwiń składy"
+                    },
+                    color = if (expanded) Color.White else Color(0xFFC2410C),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+            }
         }
 
         if (expanded && hasResultDetails) {
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(7.dp))
 
             ResultDetailsView(
                 resultDetails = game.resultDetails
@@ -911,7 +879,34 @@ fun GameRow(
         }
     }
 }
+fun CompactTeamLine(
+    teamName: String,
+    score: String
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = teamName,
+            color = Color(0xFF111827),
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
 
+        Text(
+            text = score.ifBlank { "-" },
+            color = Color(0xFF111827),
+            fontSize = 14.sp,
+            fontWeight = FontWeight.ExtraBold,
+            modifier = Modifier.padding(start = 8.dp)
+        )
+    }
+}
+@Composable
 @Composable
 fun ResultDetailsView(
     resultDetails: List<GameResultTeam>
@@ -919,30 +914,30 @@ fun ResultDetailsView(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(11.dp))
+            .clip(RoundedCornerShape(9.dp))
             .background(Color.White)
-            .padding(10.dp)
+            .padding(8.dp)
     ) {
         Text(
-            text = "Szczegółowe wyniki",
+            text = "Składy / punkty",
             color = Color(0xFF111827),
-            fontSize = 14.sp,
+            fontSize = 13.sp,
             fontWeight = FontWeight.ExtraBold
         )
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(6.dp))
 
         resultDetails.forEachIndexed { teamIndex, team ->
             Text(
                 text = team.teamName,
                 color = Color(0xFF166534),
-                fontSize = 13.sp,
+                fontSize = 12.sp,
                 fontWeight = FontWeight.ExtraBold,
-                maxLines = 2,
+                maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
 
-            Spacer(modifier = Modifier.height(5.dp))
+            Spacer(modifier = Modifier.height(3.dp))
 
             team.riders.forEach { rider ->
                 RiderResultRow(
@@ -951,7 +946,7 @@ fun ResultDetailsView(
             }
 
             if (teamIndex != resultDetails.lastIndex) {
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(7.dp))
             }
         }
     }
@@ -964,15 +959,15 @@ fun RiderResultRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 3.dp),
+            .padding(vertical = 1.dp),
         verticalAlignment = Alignment.Top
     ) {
         Text(
             text = rider.number.ifBlank { "•" },
             color = Color(0xFF6B7280),
-            fontSize = 12.sp,
+            fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
-            modifier = Modifier.width(24.dp)
+            modifier = Modifier.width(22.dp)
         )
 
         Column(
@@ -981,7 +976,7 @@ fun RiderResultRow(
             Text(
                 text = rider.name.ifBlank { "Zawodnik" },
                 color = Color(0xFF111827),
-                fontSize = 13.sp,
+                fontSize = 12.sp,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -991,7 +986,7 @@ fun RiderResultRow(
                 Text(
                     text = rider.pointsByHeat.joinToString(" · "),
                     color = Color(0xFF6B7280),
-                    fontSize = 11.sp,
+                    fontSize = 10.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -1001,13 +996,12 @@ fun RiderResultRow(
         Text(
             text = rider.total.ifBlank { "0" },
             color = Color(0xFF16A34A),
-            fontSize = 14.sp,
+            fontSize = 13.sp,
             fontWeight = FontWeight.ExtraBold,
-            modifier = Modifier.padding(start = 8.dp)
+            modifier = Modifier.padding(start = 6.dp)
         )
     }
 }
-
 @Composable
 fun NewsScreen(
     news: List<NewsItem>,
